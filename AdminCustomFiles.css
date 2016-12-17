@@ -1,0 +1,67 @@
+.inputter {
+	min-width: 100%;
+	width: 100%;
+}
+
+.inputter .ui-button,
+.inputter .ui-button:hover {
+	white-space: nowrap;
+	padding: .2em .3em !important;
+}
+
+.inputter .ui-button i {
+	margin-right: .2em;
+}
+
+.inputter td:nth-child(2) {
+	padding-right: 1em;
+}
+
+.inputter input {
+	width: 100%;
+}
+
+.files li {
+	color: #FFF;
+	background: #81a70b;
+	margin: 0 0 1px 0;
+}
+
+.files li.not-found,
+.files li.not-found:hover {
+	background: red;
+}
+
+.file-not-found {
+	margin-left: 2em;
+}
+
+.files li:hover {
+	background: #DB1174;
+	cursor: move;
+}
+
+.files .process {
+	display: inline-block;
+	padding-left: .5em;
+	line-height: inherit;
+}
+
+.files .icons {
+	float: right;
+	line-height: inherit;
+}
+
+.files i {
+	min-width: 24px;
+	text-align: center;
+}
+
+.files i:hover {
+	background: #DB1174;
+	cursor: pointer;
+}
+
+.CustomGhost {
+	top: 20px !important;
+}

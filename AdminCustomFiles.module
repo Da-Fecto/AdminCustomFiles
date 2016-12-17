@@ -1,0 +1,400 @@
+<?php namespace ProcessWire;
+
+use \DirectoryIterator;
+
+/**
+ * Admin Custom Files (ProcessWire 3.x)
+ *
+ * This module enables you to add custom scripts and files to the admin.
+ *
+ * Admin Custom Files
+ * Copyright (C) 2016 by Martijn Geerts
+ * Licensed under GNU/GPL v2, see LICENSE.TXT
+ *
+ */
+class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
+
+	/**
+	 * Return info about this Module
+	 *
+	 * @return array
+	 *
+	 */
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'Admin Custom Files',
+			'version' => '0.0.1',
+			'author' => 'Martijn Geerts',
+			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
+			'singular' => true,
+			'autoload' => "template=admin",
+			'icon' => 'file-code-o',
+			'requiresVersions' => array(
+				'PHP' => array('>=', '5.3.6'),
+				'ProcessWire' => array('>=', '3.0.33'),
+				),
+			);
+	}
+
+	//@var mixed array|null
+	private $index = array();
+
+	// @var array $defaults
+	private $defaults = array(
+		'base' => null,
+		'folder' => 'AdminCustomFiles',
+		'processes' => array(),
+		'theme' => null,
+		'hash' => null,
+		'js_config' => null,
+		'dependencies' => null,
+		);
+
+	/**
+	 * Set defaults
+	 *
+	 */
+	public function __construct() {
+		// Little playground
+		$this->defaults['dependencies'] = json_encode(array(
+			array(
+				"process" => "ProcessModule",
+				"file" => "/wire/modules/System/SystemNotifications/Notifications.css"),
+			array(
+				"process" => "ProcessModule",
+				"file" => "/wire/modules/System/SystemNotifications/Notifications.js"),
+			array(
+				"process" => "ProcessModule",
+				"file" => "/site/modules/AdminCustomFiles/ghostMessages.js"),
+		), true);
+
+		foreach ($this->defaults as $key => $value) $this->set($key, $value);
+	}
+
+	/**
+	 * Set defaults
+	 *
+	 */
+	public function init() {
+		// Include JS & CSS for self::getModuleConfigInputfields
+		if ($this->wire('page')->process === 'ProcessModule' && $this->wire('input')->get('name') === $this->className()) {
+			$config = $this->wire('config');
+			$config->scripts->add($config->urls->get($this->className()). $this->className() . '.js');
+			$config->styles->add($config->urls->get($this->className()). $this->className() . '.css');
+		}
+	}
+
+	/**
+	 * After process module is executed
+	 *
+	 * @param HookEvent $event
+	 *
+	 */
+	public function afterProcessExecute(HookEvent $event) {
+		// @var Process $process The Process instance currently executing
+		$process = $this->wire('process');
+		if (!$process instanceof Process) return;
+
+		$config = $this->wire('config');
+
+		// Load dependencies before the others
+		$this->getDependencies($process);
+
+		// Build folder index
+		$this->buildIndex($process);
+
+		if ($this->index !== false) {
+			foreach($this->index['theme'] as $prop) $config->get($prop['type'])->add($prop['url']);
+			foreach($this->index['process'] as $prop) $config->get($prop['type'])->add($prop['url']);
+		}
+
+		if ($this->js_config) {
+			$u = (array) $this->wire('user');
+			$this->wire('config')->js($this->className(), array(
+				'user' => $u,
+				'module' => $this->wire('modules')->getModuleInfoVerbose($process),
+			));
+		}
+	}
+
+	/**
+	 * API Ready
+	 *
+	 */
+	public function ready() {
+		// Build ACF info array
+		$this->getBase();
+	 	if (isset($this->base['exists']) && $this->base['exists']) {
+			$this->addHookAfter('ProcessController::execute', $this, 'afterProcessExecute');
+		}
+	}
+
+	/**
+	 * Bild String
+	 *
+	 * @param string $string Relative from AdminCustomFiles or from root
+	 * @return mixed Associative array with URL and filetype or boolean false
+	 *
+	 */
+	public function buildUrl($string) {
+		$config = $this->wire('config');
+		$types = array(
+			'js' => 'scripts',
+			'css' => 'styles',
+			);
+
+
+		if (strpos($string, '/') === 0) {
+			$string = $config->paths->root . $string;
+		} else {
+			$string = $config->paths->root . $this->base['relative'] . $string;
+		}
+
+		$path = str_replace('//', '/', $string);
+		if (!is_file($path)) return false;
+		$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+		if (!isset($types[$ext])) return false;
+
+		$hash = $this->hash ? '?hash=' . md5_file($path) : '';
+		$path = str_replace($config->paths->root, '/', $path) . $hash;
+
+		return array(
+			'path' => $path,
+			'type' => $types[$ext],
+		);
+	}
+
+	/**
+	 * Build folder index
+	 *
+	 * @param Process $process
+	 *
+	 */
+	private function getDependencies(Process $process) {
+		if (!$this->dependencies) return;
+
+		$files = json_decode($this->dependencies, true);
+
+		foreach ($files as $item) {
+			$raw = false;
+			if (!$item['process']) {
+				$raw = $item['file'];
+			} else if ($process->className() === $item['process']) {
+				$raw = $item['file'];
+			}
+
+			if ($raw && $url = $this->buildUrl($raw)) {
+				$this->wire('config')->get($url['type'])->add($url['path']);
+			}
+		}
+	}
+
+	/**
+	 * Build folder index
+	 *
+	 * @param Process $process
+	 *
+	 */
+	private function buildIndex(Process $process) {
+
+		$this->index['theme'] = array();
+		$this->index['process'] = array();
+
+		$theme = $this->theme;
+		if ($theme) {
+			$user = $this->wire('user');
+			$theme = $user->get('admin_theme');
+			$theme = $theme === null  ? 'AdminThemeDefault' : $theme;
+		}
+
+		$types = array(
+			'js' => 'scripts',
+			'css' => 'styles',
+			);
+
+		$directory = new DirectoryIterator($this->base['path']);
+		foreach ($directory as $fileinfo) {
+
+			$name = $fileinfo->getBasename();
+			$ext = strtolower($fileinfo->getExtension());
+			if (!isset($types[$ext])) continue;
+
+			$loadTheme = ($theme && strpos($name, $theme) === 0);
+			$loadProcess = (strpos($name, $process->className()) === 0 && in_array($process->className(), $this->processes));
+
+			if (!$loadTheme && !$loadProcess) continue;
+
+			$this->index[($loadTheme ? 'theme' : 'process')][$name] = array(
+				'type' => $types[$ext],
+				'url' => $this->base['relative'] .  $fileinfo->getBasename() . ($this->hash ? '?hash=' . md5_file($fileinfo->getPathname()) : ''),
+				);
+		}
+
+		$this->index = count(array_filter($this->index)) ? $this->index : false;
+	}
+
+	/**
+	 * Get information about ACF folder
+	 *
+	 * @return array
+	 *
+	 */
+	private function getBase() {
+		if ($this->base) return $this->base;
+		$base = $this->wire('config')->paths->templates . $this->folder . '/';
+		$base = preg_replace('#/+#', '/', $base);
+		$this->base = array(
+			'exists' => is_dir($base),
+			'path' => $base,
+			'relative' => substr($base, strpos($base, '/site/templates/')),
+			'clean' => substr($base, strpos($base, '/site/templates/') + strlen('/site/templates/')),
+		);
+		return $this->base;
+	}
+
+	/**
+	 * Install
+	 *
+	 */
+	public function ___install() {
+		$base = $this->getBase();
+		if (!$base['exists']) {
+			$created = $this->wire('files')->mkdir($base['path']);
+			if ($created) $this->message(sprintf($this->_("We created your AdminCustomFiles folder (%s)."), $base['relative']));
+			if (!$created) $this->warning(sprintf($this->_("We are unable to create the AdminCustomFiles folder (%s)."), $base['relative']));
+		} else {
+			$this->message(sprintf($this->_("AdminCustomFiles folder already exists (%s)."), $base['relative']));
+		}
+	}
+
+	/**
+	 * Uninstall
+	 *
+	 */
+	public function ___uninstall() {
+		$base = $this->getBase();
+		if ($base['exists']) $this->message(sprintf($this->_("You may remove the folder %s manually."), $base['relative']));
+	}
+
+	/**
+	 * Module configuration
+	 *
+	 * Required for ConfigurableModule interface
+	 *
+	 * @param InputfieldWrapper $inputfields
+	 *
+	 */
+	public function getModuleConfigInputfields(InputfieldWrapper $inputfields) {
+
+		$modules = $this->wire('modules')->sort('name');
+		$base = $this->getBase();
+
+		$name = 'processes';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldAsmSelect');
+		$f->set('label', $this->_('Activate for process'));
+		$f->set('description', $this->_('Inject the files when the filename starts with the currently active process name and the process is selected.'));
+		foreach ($modules as $module) {
+			// Only process Modules
+			if (strpos($module->name, 'Process') !== 0) continue;
+			$info = $modules->getModuleInfo($module);
+			$label = isset($info['title']) ? "{$module->name}, ({$info['title']})" : $module->name;
+			$f->addOption($module->name, $label);
+		}
+		$notes = $base['exists'] && !count($value) ? $this->_('Select a process to enable file loading.') : '';
+		$notes = $base['exists'] && count($value) ? sprintf($this->_("Load files with prefix: %s."), implode(", ", $value)) : $notes;
+		$f->set('notes', $notes);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$inputfields->add($f);
+
+		$description =
+			$this->_("Drop JS or CSS files in the AdminCustomFiles directory starting with with a **process** name.") . "\n" .
+			$this->_("Then enable file injection by selecting the process under **Activate for process**.");
+
+		$name = 'folder';
+		$f = $modules->get('InputfieldText');
+		$f->set('label', $this->_('AdminCustomFiles'));
+		$f->set('description', $description);
+		$f->attr('name', $name);
+		$f->attr('value', $this->get($name));
+		if ($base['exists']) {
+			$f->attr('value', $base['clean']);
+			$f->set('notes', sprintf($this->_('Folder exists: %s.'), $base['relative']));
+		} else {
+			$f->attr('value', $base['clean']);
+			$f->error($this->_("AdminCustomFiles folder does not exist, please create the folder inside your /site/templates/ folder."));
+		}
+		$inputfields->add($f);
+
+		$name = 'theme';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldCheckbox');
+		$f->set('skipLabel', Inputfield::skipLabelFor);
+		$f->set('label', $this->_('Theme based files'));
+		$f->set('description', $this->_('Adds files that start with the currently active AdminTheme name.'));
+		$f->set('label2', $this->_('Include theme based files.'));
+		$notes = $base['exists'] ? sprintf($this->_('Example: %sAdminThemeRenoYourSuffix.js'), $base['relative']) : '';
+		$f->set('notes', $notes);
+		$f->attr('checked', $value);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$inputfields->add($f);
+
+		$description =
+			$this->_("Dependencies will load before the other injected files.") . "\n" .
+			$this->_("Dependencies with a selected process will only run on that **Process** module."). "\n" .
+			$this->_("Dependencies without a selected process will load on all **Process** modules."). "\n" .
+			$this->_("Dependencies will load regardless of the selected value at **Activate for process**.");
+
+		$name = 'dependencies';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldText');
+		$f->set('label', $this->_('Dependencies'));
+		$f->set('description', $description);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$f->attr('type', 'hidden');
+		$f->attr('data-headers', json_encode(array(
+			'select' => $this->_("Process"),
+			'file' => $this->_("URL (Root relative start with a slash, AdminCustomFiles relative start without a slash)"),
+			'button' => $this->_("Add"),
+			), true));
+		$f->attr('data-path', $base['relative']);
+		$f->attr('data-messages', json_encode(array(
+			'filenotfound' => $this->_("(file not found)"),
+			'notfound' => $this->_("File not found!"),
+			'toshort' => $this->_("Filename too short!"),
+			'noext' => $this->_("No extension!"),
+			'wrongext' => $this->_("Use .css or .js!"),
+		)));
+		$inputfields->add($f);
+
+		$name = 'hash';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldCheckbox');
+		$f->set('skipLabel', Inputfield::skipLabelFor);
+		$f->set('label', $this->_('Cache busting'));
+		$f->set('description', $this->_('Adds a file hash get variable to files to force a fresh copy from the server.'));
+		$f->set('label2', $this->_('Enable cache busting.'));
+		$f->set('notes', $this->_("Uses PHP's md5_file function."));
+		$f->set('columnWidth', 50);
+		$f->attr('checked', $value);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$inputfields->add($f);
+
+		$name = 'js_config';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldCheckbox');
+		$f->set('skipLabel', Inputfield::skipLabelFor);
+		$f->set('label', $this->_('Config JS '));
+		$f->set('label2', $this->_('Additional JSON config data.'));
+		$f->set('notes', $this->_("See: console.log(config.AdminCustomFiles)"));
+		$f->set('columnWidth', 50);
+		$f->attr('checked', $value);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$inputfields->add($f);
+	}
+}
