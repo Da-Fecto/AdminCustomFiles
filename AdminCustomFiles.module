@@ -8,7 +8,7 @@ use \DirectoryIterator;
  * This module enables you to add custom scripts and files to the admin.
  *
  * Admin Custom Files
- * Copyright (C) 2016 by Martijn Geerts
+ * Copyright (C) 2016|2017 by Martijn Geerts
  * Licensed under GNU/GPL v2, see LICENSE.TXT
  *
  */
@@ -23,7 +23,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Admin Custom Files',
-			'version' => '0.0.1',
+			'version' => '0.9.1',
 			'author' => 'Martijn Geerts',
 			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
 			'singular' => true,
@@ -56,16 +56,22 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 */
 	public function __construct() {
 		// Little playground
+		$coreDir = $this->wire('config')->urls->modules;
+		$moduleDir = $this->wire('config')->urls->get($this->className());
+
 		$this->defaults['dependencies'] = json_encode(array(
 			array(
 				"process" => "ProcessModule",
-				"file" => "/wire/modules/System/SystemNotifications/Notifications.css"),
+				"file" => $coreDir . "System/SystemNotifications/Notifications.css"
+			),
 			array(
 				"process" => "ProcessModule",
-				"file" => "/wire/modules/System/SystemNotifications/Notifications.js"),
+				"file" => $coreDir . "System/SystemNotifications/Notifications.js"
+			),
 			array(
 				"process" => "ProcessModule",
-				"file" => "/site/modules/AdminCustomFiles/ghostMessages.js"),
+				"file" => $moduleDir . "ghostMessages.js"
+			),
 		), true);
 
 		foreach ($this->defaults as $key => $value) $this->set($key, $value);
@@ -74,13 +80,16 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	/**
 	 * Set defaults
 	 *
+	 * Load scripts & styles for ProcessModule process
+	 *
 	 */
 	public function init() {
+		$className = $this->className();
 		// Include JS & CSS for self::getModuleConfigInputfields
-		if ($this->wire('page')->process === 'ProcessModule' && $this->wire('input')->get('name') === $this->className()) {
+		if ($this->wire('page')->process === 'ProcessModule' && $this->wire('input')->get('name') === $className) {
 			$config = $this->wire('config');
-			$config->scripts->add($config->urls->get($this->className()). $this->className() . '.js');
-			$config->styles->add($config->urls->get($this->className()). $this->className() . '.css');
+			$config->scripts->add($config->urls->get($className). $className . '.js');
+			$config->styles->add($config->urls->get($className). $className . '.css');
 		}
 	}
 
@@ -130,7 +139,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	}
 
 	/**
-	 * Bild String
+	 * Build String
 	 *
 	 * @param string $string Relative from AdminCustomFiles or from root
 	 * @return mixed Associative array with URL and filetype or boolean false
@@ -143,20 +152,19 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 			'css' => 'styles',
 			);
 
-
-		if (strpos($string, '/') === 0) {
-			$string = $config->paths->root . $string;
+		// Relative
+		if (!(substr($string, 0, 1) === '/')) {
+			$path = $this->base['path'] . $string;
 		} else {
-			$string = $config->paths->root . $this->base['relative'] . $string;
+			$path = rtrim($config->paths->root, '/') . $string;
 		}
 
-		$path = str_replace('//', '/', $string);
 		if (!is_file($path)) return false;
 		$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 		if (!isset($types[$ext])) return false;
 
 		$hash = $this->hash ? '?hash=' . md5_file($path) : '';
-		$path = str_replace($config->paths->root, '/', $path) . $hash;
+		$path = '/' . str_replace($config->paths->root, '', $path) . $hash;
 
 		return array(
 			'path' => $path,
@@ -172,7 +180,6 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 */
 	private function getDependencies(Process $process) {
 		if (!$this->dependencies) return;
-
 		$files = json_decode($this->dependencies, true);
 
 		foreach ($files as $item) {
@@ -200,13 +207,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$this->index['theme'] = array();
 		$this->index['process'] = array();
 
-		$theme = $this->theme;
-		if ($theme) {
-			$user = $this->wire('user');
-			$theme = $user->get('admin_theme');
-			$theme = $theme === null  ? 'AdminThemeDefault' : $theme;
-		}
-
+		$themeClassName = $this->wire('adminTheme')->className();
 		$types = array(
 			'js' => 'scripts',
 			'css' => 'styles',
@@ -219,12 +220,13 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 			$ext = strtolower($fileinfo->getExtension());
 			if (!isset($types[$ext])) continue;
 
-			$loadTheme = ($theme && strpos($name, $theme) === 0);
+			$loadTheme = ($this->theme && $themeClassName && strpos($name, $themeClassName) === 0);
 			$loadProcess = (strpos($name, $process->className()) === 0 && in_array($process->className(), $this->processes));
 
 			if (!$loadTheme && !$loadProcess) continue;
+			$load = $loadTheme ? 'theme' : 'process';
 
-			$this->index[($loadTheme ? 'theme' : 'process')][$name] = array(
+			$this->index[$load][$name] = array(
 				'type' => $types[$ext],
 				'url' => $this->base['relative'] .  $fileinfo->getBasename() . ($this->hash ? '?hash=' . md5_file($fileinfo->getPathname()) : ''),
 				);
@@ -243,12 +245,15 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		if ($this->base) return $this->base;
 		$base = $this->wire('config')->paths->templates . $this->folder . '/';
 		$base = preg_replace('#/+#', '/', $base);
+		$relative = $this->wire('config')->urls->templates;
+
 		$this->base = array(
 			'exists' => is_dir($base),
 			'path' => $base,
-			'relative' => substr($base, strpos($base, '/site/templates/')),
-			'clean' => substr($base, strpos($base, '/site/templates/') + strlen('/site/templates/')),
+			'relative' => substr($base, strpos($base, $relative)),
+			'clean' => substr($base, strpos($base, $relative) + strlen($relative)),
 		);
+
 		return $this->base;
 	}
 
@@ -285,7 +290,6 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 *
 	 */
 	public function getModuleConfigInputfields(InputfieldWrapper $inputfields) {
-
 		$modules = $this->wire('modules')->sort('name');
 		$base = $this->getBase();
 
