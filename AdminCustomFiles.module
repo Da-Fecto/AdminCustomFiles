@@ -415,4 +415,5 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$f->attr('value', $value);
 		$inputfields->add($f);
 	}
+	
 }
