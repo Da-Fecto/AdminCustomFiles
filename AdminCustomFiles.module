@@ -23,7 +23,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Admin Custom Files',
-			'version' => '0.9.1',
+			'version' => '0.9.2',
 			'author' => 'Martijn Geerts',
 			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
 			'singular' => true,
@@ -31,7 +31,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 			'icon' => 'file-code-o',
 			'requiresVersions' => array(
 				'PHP' => array('>=', '5.3.6'),
-				'ProcessWire' => array('>=', '3.0.33'),
+				'ProcessWire' => array('>=', '3.0.76'),
 				),
 			);
 	}
@@ -118,11 +118,26 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		}
 
 		if ($this->js_config) {
-			$u = (array) $this->wire('user');
-			$this->wire('config')->js($this->className(), array(
-				'user' => $u,
-				'module' => $this->wire('modules')->getModuleInfoVerbose($process),
-			));
+			$u = $this->wire('user');
+			$a = array();
+			$a['process'] = $process->className();
+			$a['user'] = array();
+			$a['roles'] = $u->roles->explode('name');
+
+			// User DATA
+			foreach($u->template->fieldgroup as $field) {
+				$value = $u->get($field->name);
+				$a['user'][$field->name] = $field->type->___exportValue($u, $field, $value);
+			}
+
+			$permissions = array();
+			foreach ($u->roles as $role) {
+				foreach ($role->permissions->each(['name', 'title']) as $array) {
+					$permissions[$array['name']] = $array;
+				}
+			}
+			$a['permisssions'] = array_values($permissions);
+			$this->wire('config')->js($this->className(), $a);
 		}
 	}
 
@@ -203,7 +218,6 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 *
 	 */
 	private function buildIndex(Process $process) {
-
 		$this->index['theme'] = array();
 		$this->index['process'] = array();
 
@@ -381,7 +395,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$f->set('label', $this->_('Cache busting'));
 		$f->set('description', $this->_('Adds a file hash get variable to files to force a fresh copy from the server.'));
 		$f->set('label2', $this->_('Enable cache busting.'));
-		$f->set('notes', $this->_("Uses PHP's md5_file function."));
+		$f->set('notes', $this->_("Uses PHP's md5_file function, thus only changed files are get uncached."));
 		$f->set('columnWidth', 50);
 		$f->attr('checked', $value);
 		$f->attr('name', $name);
