@@ -23,7 +23,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Admin Custom Files',
-			'version' => '0.9.2',
+			'version' => '0.9.3',
 			'author' => 'Martijn Geerts',
 			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
 			'singular' => true,
@@ -93,6 +93,9 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		}
 	}
 
+
+
+
 	/**
 	 * After process module is executed
 	 *
@@ -117,28 +120,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 			foreach($this->index['process'] as $prop) $config->get($prop['type'])->add($prop['url']);
 		}
 
-		if ($this->js_config) {
-			$u = $this->wire('user');
-			$a = array();
-			$a['process'] = $process->className();
-			$a['user'] = array();
-			$a['roles'] = $u->roles->explode('name');
-
-			// User DATA
-			foreach($u->template->fieldgroup as $field) {
-				$value = $u->get($field->name);
-				$a['user'][$field->name] = $field->type->___exportValue($u, $field, $value);
-			}
-
-			$permissions = array();
-			foreach ($u->roles as $role) {
-				foreach ($role->permissions->each(['name', 'title']) as $array) {
-					$permissions[$array['name']] = $array;
-				}
-			}
-			$a['permisssions'] = array_values($permissions);
-			$this->wire('config')->js($this->className(), $a);
-		}
+		if ($this->js_config) $this->jsConfig($process);
 	}
 
 	/**
@@ -151,6 +133,70 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 	if (isset($this->base['exists']) && $this->base['exists']) {
 			$this->addHookAfter('ProcessController::execute', $this, 'afterProcessExecute');
 		}
+	}
+
+	/**
+	 * Set $config->js
+	 *
+	 */
+	private function jsConfig(Process $process) {
+		$user = $this->wire('user');
+		$config = $this->wire('config');
+
+		$array = array(
+			'host' => $config->httpHost,
+			'process' => $process->className(),
+			'adminTheme' => $this->getThemeName(),
+			'user' => array(),
+			'roles' => array(),
+			'permissions' => array(),
+		);
+
+		foreach($user->template->fieldgroup as $field) {
+			$value = $user->get($field->name);
+			$array['user'][$field->name] = $field->type->___exportValue($user, $field, $value);
+		}
+
+		foreach ($user->roles as $role) {
+			$array['roles'][] = $role->name;
+			foreach ($role->permissions->each(['name', 'title']) as $arrayrray) {
+				$array['permissions'][$arrayrray['name']] = $arrayrray['title'];
+			}
+		}
+
+		if ($process instanceof ProcessPageEdit) {
+			$page = $process->getPage();
+			$array['template'] = $page->template->name;
+
+			$fields = array();
+			foreach ($page->template->fields as $field) $fields[$field->name] = $field->data;
+			$array['fields'] = $fields;
+
+			$array['page'] = array(
+				'id' => $page->id,
+				'name' => $page->name,
+				'path' => $page->path,
+				'parentID' => $page->parentID,
+				'numChildren' => $page->numChildren,
+				'created' => $page->created,
+				'modified' => $page->modified,
+				'createdUser' => $page->createdUser->name,
+				'modifiedUser' => $page->modifiedUser->name,
+			);
+		}
+
+		$config->js($this->className(), $array);
+	}
+
+
+	/**
+	 * Get theme name
+	 *
+	 * @return string
+	 *
+	 */
+	private function getThemeName() {
+		return $this->wire('adminTheme')->className();
 	}
 
 	/**
@@ -221,7 +267,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$this->index['theme'] = array();
 		$this->index['process'] = array();
 
-		$themeClassName = $this->wire('adminTheme')->className();
+		$themeClassName = $this->getThemeName();
 		$types = array(
 			'js' => 'scripts',
 			'css' => 'styles',
@@ -415,5 +461,4 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$f->attr('value', $value);
 		$inputfields->add($f);
 	}
-	
 }
