@@ -23,7 +23,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Admin Custom Files',
-			'version' => '0.9.3',
+			'version' => '0.9.4',
 			'author' => 'Martijn Geerts',
 			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
 			'singular' => true,
@@ -31,7 +31,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 			'icon' => 'file-code-o',
 			'requiresVersions' => array(
 				'PHP' => array('>=', '5.3.6'),
-				'ProcessWire' => array('>=', '3.0.76'),
+				'ProcessWire' => array('>=', '3.0.62'),
 				),
 			);
 	}
@@ -67,11 +67,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 			array(
 				"process" => "ProcessModule",
 				"file" => $coreDir . "System/SystemNotifications/Notifications.js"
-			),
-			array(
-				"process" => "ProcessModule",
-				"file" => $moduleDir . "ghostMessages.js"
-			),
+			)
 		), true);
 
 		foreach ($this->defaults as $key => $value) $this->set($key, $value);
@@ -93,21 +89,17 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		}
 	}
 
-
-
-
 	/**
-	 * After process module is executed
+	 * After Process::Execute
 	 *
 	 * @param HookEvent $event
-	 *
+	 * @return void
 	 */
 	public function afterProcessExecute(HookEvent $event) {
 		// @var Process $process The Process instance currently executing
 		$process = $this->wire('process');
 		if (!$process instanceof Process) return;
 
-		$config = $this->wire('config');
 
 		// Load dependencies before the others
 		$this->getDependencies($process);
@@ -115,12 +107,22 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		// Build folder index
 		$this->buildIndex($process);
 
-		if ($this->index !== false) {
-			foreach($this->index['theme'] as $prop) $config->get($prop['type'])->add($prop['url']);
-			foreach($this->index['process'] as $prop) $config->get($prop['type'])->add($prop['url']);
-		}
-
 		if ($this->js_config) $this->jsConfig($process);
+	}
+
+	/**
+	 * After AdminTheme::getExtraMarkup
+	 *
+	 * @param HookEvent $event
+	 * @return void
+	 */
+	public function afterAdminThemeGetExtraMarkup(HookEvent $event) {
+		$config = $this->wire('config');
+
+		if ($this->index !== false) {
+			foreach ($this->index['theme'] as $prop) $config->get($prop['type'])->add($prop['url']);
+			foreach ($this->index['process'] as $prop) $config->get($prop['type'])->add($prop['url']);
+		}
 	}
 
 	/**
@@ -132,6 +134,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$this->getBase();
 	 	if (isset($this->base['exists']) && $this->base['exists']) {
 			$this->addHookAfter('ProcessController::execute', $this, 'afterProcessExecute');
+			$this->addHookAfter('AdminTheme::getExtraMarkup', $this, 'afterAdminThemeGetExtraMarkup');
 		}
 	}
 

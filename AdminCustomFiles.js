@@ -33,18 +33,9 @@ $(function () {
 		/**
 		 * Interact with the user for dependencies
 		 *
-		 *
-		 *
 		 */
 		function message(message) {
-
-			// See ghostMessages.js in drop-ins
-			if (typeof ghostMessages === "object") {
-				ghostMessages.message(message, "warning");
-			} else {
-				alert(message);
-			}
-
+			alert(message);
 			inputs.file.effect("highlight", { color: "rgba(255, 0, 0, 0.1)" }, 100);
 		}
 
