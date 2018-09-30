@@ -9,268 +9,185 @@
  *
  */
 
-$(function () {
-
+var AdminCustomFiles = (function () {
 	"use strict";
 
-	var dependencies = (function ($) {
+	var func = {};
+	var obj = {};
+	var el = {};
 
-		var input = $("#Inputfield_dependencies").get(0),
-			data = input.value ? JSON.parse(input.value) : [],
-			headers = JSON.parse(input.dataset.headers),
-			messages = JSON.parse(input.dataset.messages),
-			inputs = {
-				select: $("<select><option></option></select>"),
-				file: $("<input>"),
-				button: $("<button class='ui-button ui-widget ui-corner-all'><i class='fa fa-plus'></i></button>")
-			},
-			$table = $("<table class='inputter'>"),
-			$thead = $("<thead>"),
-			$tbody = $("<tbody>"),
-			$ul = $("<ul class='files'></ul>");
+	func.tableMarkup = function () {
+		var options = "";
+		$("#Inputfield_processes option").each(function () {
+			options += "<option value='" + this.value + "'>" +
+				this.innerHTML +
+			"</option>";
+		});
 
+		return "<table id='acfTable' class='acfTable'>" +
+			"<tr>" +
+				"<th>" + obj.text.headers.select + "</th>" +
+				"<th id='acfHeader'>" + obj.text.headers.file + "</th>" +
+				"<th></th>" +
+			"</tr>" +
+			"<tr>" +
+				"<td>" +
+					"<select class='uk-select' id='acfSelect'>" +
+						"<option></option>" +
+						options +
+					"</select>" +
+				"</td>" +
+				"<td>" +
+					"<input class='uk-input acfInput' id='acfInput'>" +
+				"</td>" +
+				"<td>" +
+					"<button class='ui-button ui-widget acfButton' id='acfButton'>" +
+						"<i class='fa fa-plus'></i>" +
+					"</button>" +
+				"</td>" +
+			"</tr>" +
+		"</table>";
+	};
 
-		/**
-		 * Interact with the user for dependencies
-		 *
-		 */
-		function message(message) {
-			alert(message);
-			inputs.file.effect("highlight", { color: "rgba(255, 0, 0, 0.1)" }, 100);
-		}
+	func.listMarkup = function () {
+		return "<ul class='files asmList asmListSortable' id='acfList'></ul>";
+	};
 
-		/**
-		 * Add file
-		 *
-		 * @param string file Absolute url
-		 * @param boolean exists File exists
-		 *
-		 */
-		function addFile(path, exists, file) {
-			var insert = true,
-				process = inputs.select.val(),
-				item = {
-				"process": process,
-				"file": file
-			};
+	func.itemMarkup = function (process, file) {
+		obj.itemWidth = obj.itemWidth || $("td:first", el.table).width();
+		return "<li class='asmListItem ui-state-default' data-item='" + JSON.stringify({"process": process, "file": file}) + "'>" +
+			"<i class='fa fa-fw fa-arrows asmListItemHandle'></i>" +
+			"<div class='asmListItemLabel'>" +
+				"<span class='acfLabelProcess' style='width:" + obj.itemWidth + "px'>" + process + "</span>" +
+				"<span class='acfLabelFile'>" + file + "</span>" +
+			"</div>" +
+			"<a href='#' class='asmListItemRemove acfDelete'>" +
+				"<i class='fa fa-trash'></i>" +
+			"</a>" +
+		"</li>";
+	};
 
-			$.each(data, function (index, old) {
-				if (old.file === item.file && old.process === item.process) {
-					insert = false;
-					return false;
-				}
-			});
+	func.setData = function () {
+		var data = [];
+		$("li", el.list).each(function () {
+			data.push($(this).data("item"));
+		});
+		el.input.value = JSON.stringify(data);
+	};
 
-			if (insert && exists) {
-				buildFileListItem(item);
-				data.push(item);
-				input.value = JSON.stringify(data);
-				inputs.select.val("");
-				inputs.file.val("");
-			} else {
-				return message(messages.notfound);
+	func.itemExists = function (url) {
+		var exists = false;
+		$.each(JSON.parse(el.input.value), function () {
+			if (this.file === url) {
+				exists = true;
+				return;
 			}
-		}
+		});
+		return exists;
+	};
 
-		/**
-		 * Remove file
-		 *
-		 */
-		function removeFile() {
-			var $li = $(this).closest("li");
+	func.getUrl = function () {
+		return el.acfInput.value.indexOf("/") !== 0
+			? el.input.dataset.path + el.acfInput.value
+			: el.acfInput.value;
+	};
 
-			$.each(data, function (index, item) {
-				if ($li.data("process") === item.process && $li.data("file") === item.file) {
-					data.splice(index, 1);
-					input.value = JSON.stringify(data);
-					$li.remove();
-				}
-			});
-		}
+	func.addItem = function (process, file) {
+		el.select.value = "";
+		el.acfInput.value = "";
+		el.list.insertAdjacentHTML("beforeend", func.itemMarkup(process, file));
+		$(".acfDelete", el.list.lastChild).on("click", func.removeItem);
+	};
 
-		/**
-		 * Sort files
-		 *
-		 * Executed by jQuery sortable.stop
-		 *
-		 */
-		function sortFiles () {
-			data = [];
-			$("li", this).each(function () {
-				data.push({
-					"process": $(this).data("process"),
-					"file":  $(this).data("file")
-				});
-			});
-			input.value = JSON.stringify(data);
-		}
+	func.addItems = function (data) {
+		$(el.list).sortable({
+			revert: 50,
+			stop: func.setData,
+			axis: "y"
+		});
+		$.each((el.input.value ? JSON.parse(el.input.value) : []), function () {
+			func.addItem(this.process, this.file);
+		});
 
-		function fileNotFound(file, exists, $li) {
-			if (exists) {
-				$(".file-not-found", $li).remove();
+		func.setData();
+	};
+
+	func.removeItem = function (event) {
+		event.preventDefault();
+		$(this).closest("li").remove();
+		func.setData();
+	};
+
+	func.showError = function (message) {
+		$(el.wrap).addClass("InputfieldStateError uk-alert-danger");
+		$(el.acfHeader).text(message);
+		setTimeout(function () {
+			$(el.wrap).removeClass("InputfieldStateError uk-alert-danger");
+			$(el.acfHeader).text(obj.text.headers.file);
+			$(el.button).removeClass("ui-state-active");
+		}, 1000);
+	};
+
+	func.ajax = function(jqXHR) {
+		if (jqXHR.status === 200) {
+			if (el.acfInput.value.indexOf(".js") > -1 || el.acfInput.value.indexOf(".css") > -1) {
+				func.addItem(el.select.value, func.getUrl());
+				func.setData();
 			} else {
-				$(".url", $li).append("<span class='file-not-found'>" + messages.filenotfound + "</span>");
+				func.showError(obj.text.messages.invalid);
 			}
-			$li.toggleClass("not-found", !exists);
+		} else {
+			func.showError(obj.text.messages.notfound);
 		}
+	};
 
-		/**
-		 * Fires callback with 3 properties
-		 *
-		 * @param string file
-		 * @param mixed jQuery object or string
-		 * @param function callback
-		 *
-		 */
-		function fileExists(file, $item, callback) {
+	func.buttonClick = function (event) {
+		event.preventDefault();
+		var url = func.getUrl();
+		var exists = func.itemExists(url);
+		if (el.acfInput.value && !exists) {
 			$.ajax({
 				type: "HEAD",
-				url: file,
+				url: url,
 				async: true,
-				complete: function(jqXHR) {
-					callback(file, jqXHR.status === 200, $item);
-				}
+				complete: func.ajax
 			});
+		} else if (exists) {
+			func.showError(obj.text.messages.exists);
+		} else {
+			setTimeout(function () {
+				$(el.button).removeClass("ui-state-active");
+			}, 300);
 		}
+	};
 
-		/**
-		 * Does the file exists? (Using AJAX)
-		 *
-		 * @param Event event
-		 *
-		 */
-		function buildUrl (event) {
-			event.preventDefault();
+	func.init = function () {
+		el.wrap = document.getElementById("wrap_Inputfield_dependencies");
+		el.input = document.getElementById("Inputfield_dependencies");
+		obj.text = $(el.input).data();
+		el.input.insertAdjacentHTML("beforebegin", func.listMarkup());
+		el.input.insertAdjacentHTML("beforebegin", func.tableMarkup()); // including set obj.text
+		el.list = document.getElementById("acfList");
+		el.table = document.getElementById("acfTable");
+		el.acfHeader = document.getElementById("acfHeader");
+		el.select = document.getElementById("acfSelect");
+		el.acfInput = document.getElementById("acfInput");
+		el.button = document.getElementById("acfButton");
+		func.addItems();
+		el.button.addEventListener("click", func.buttonClick);
 
-			var file = inputs.file.val(),
-				ext = file.indexOf(".") > -1 ? file.split(".").pop() : false;
+		$(el.button).css({
+			"height": $(el.acfInput).outerHeight() + "px",
+			"line-height": $(el.acfInput).outerHeight() + "px",
+		});
+	};
 
-			// yeah right
-			if (!file || file.length < 4) {
-				return message(messages.toshort);
-			}
+	return {
+		init: func.init
+	};
 
-			// We need .js or .css
-			if (!ext) {
-				return message(messages.noext);
-			}
+}());
 
-			// We need .js or .css
-			if (ext !== "js" && ext !== "css") {
-				return message(messages.wrongext);
-			}
-			var path;
-			// Is the file relative?
-			if (file.indexOf("/") !== 0) {
-				path = input.dataset.path + file;
-			} else {
-				path = file;
-			}
-
-			fileExists(path, file, addFile);
-		}
-
-		/**
-		 * Build list item
-		 *
-		 * @param item object Object with propertie process & file
-		 *
-		 */
-		function buildFileListItem(item) {
-			var $label =
-				"<span class='process' style='width: " + $("td:first", $table).width() + "px'>" + item.process + "</span> " +
-				"<span class='url'>" + item.file + "</span>" +
-				"<span class='icons'>" +
-					"<i class='fa fa-trash delete'></i>" +
-				"</span>",
-
-				$li = $("<li>", {
-				"data-process": item.process,
-				"data-file": item.file
-			}).html($label).appendTo($ul);
-
-			fileExists(item.file, $li, fileNotFound);
-
-			$(".delete", $li).on("click", removeFile);
-		}
-
-		/**
-		 * Build the Inputter
-		 *
-		 */
-		function buildInputter() {
-			$.each(inputs, function (key, $el) {
-
-				var label = headers.hasOwnProperty(key) ? headers[key] : "",
-					$th = $("<th>" + (key !== "button" ? label : "") + "</th>"),
-					$td = $("<td>");
-
-				// Select
-				if (key === "select") {
-					$(".Inputfield_processes option").each(function () {
-						$el.append("<option value='" + this.value + "'>" + this.value + "</option>");
-					});
-
-				} else if (key === "button") {
-					$el.append(label);
-				}
-
-				$td.append($el);
-				$thead.append($th);
-				$tbody.append($td);
-			});
-
-			// Insert inputter
-			$table.append($thead);
-			$table.append($tbody);
-			$table.insertBefore(input);
-
-			// Add styles
-			inputs.select.closest("td").width(inputs.select.width() + 16);
-			inputs.button.closest("td").width(inputs.button.width() + 16);
-
-			// Add Events
-			inputs.button.on("click", buildUrl);
-		}
-
-
-		/**
-		 * Build the Inputter
-		 *
-		 * @param data Array with objects
-		 *
-		 */
-		function buildFileList() {
-		var i = 0;
-
-			for(i = 0; i < data.length; i+=1) {
-				buildFileListItem(data[i]);
-			}
-
-			// Insert List
-			$ul.insertBefore($table);
-
-			// Add Events
-			$ul.sortable({
-				revert: 50,
-				stop: sortFiles
-			});
-		}
-
-		/**
-		 * Initialize the Module
-		 *
-		 */
-		function initialize() {
-			buildInputter();
-			buildFileList();
-		}
-
-		return {
-			init: initialize
-		};
-
-	}(jQuery));
-
-	dependencies.init();
+$(function () {
+	AdminCustomFiles.init();
 });
