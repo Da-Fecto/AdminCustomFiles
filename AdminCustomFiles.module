@@ -23,7 +23,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Admin Custom Files',
-			'version' => '0.9.5',
+			'version' => '0.9.6',
 			'author' => 'Martijn Geerts',
 			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
 			'singular' => true,
@@ -40,6 +40,9 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	const fileTypes = array('js' => 'scripts', 'css' => 'styles');
 
 	/** @var array */
+	const configClasses = array("AcfConfigDefault", "AcfConfigLegacy");
+
+	/** @var array */
 	private $index = array();
 
 	/** @var array $defaults */
@@ -51,6 +54,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		'hash' => null,
 		'js_config' => null,
 		'dependencies' => null,
+		'js_config_class' => 'AcfConfigDefault'
 		);
 
 	/**
@@ -59,6 +63,10 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 */
 	public function __construct() {
 		foreach ($this->defaults as $key => $value) $this->set($key, $value);
+
+		if ($this->input->get('upgrade') && $this->page->process === 'ProcessModule') {
+			$this->___upgrade('unknown', AdminCustomFiles::getModuleInfo()['version']);
+		}
 	}
 
 	/**
@@ -76,10 +84,17 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$page = $this->wire('page');
 		/** @var string */
 		$className = $this->className();
+		/** @var array */
+		$base = $this->getBase();
 
 		if ($page->process === 'ProcessModule' && $input->get('name') === $className) {
-			$config->scripts->add($config->urls->get($className) . $className . '.js');
-			$config->styles->add($config->urls->get($className) . $className . '.css');
+			require $base['modulePath'] . "acfConfig.php";
+			$config->scripts->add($base['moduleUrl'] . $className . '.js');
+			$config->styles->add($base['moduleUrl'] . $className . '.css');
+
+		} else if ($this->js_config) {
+			require $base['modulePath'] . "acfConfig.php";
+
 		}
 	}
 
@@ -96,6 +111,12 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		}
 	}
 
+	/**
+	 * After Page::render
+	 *
+	 * @param HookEvent $event
+	 * @return void
+	 */
 	public function render(HookEvent $event) {
 		if (strpos($event->return, '<!DOCTYPE html>') === false) return;
 		if (!$event->object->is('admin')) return;
@@ -136,86 +157,54 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		// @var Process $process The Process instance currently executing
 		$process = $this->wire('process');
 		if (!$process instanceof Process) return;
-
 		$this->buildIndex($process);
-
-		if ($this->js_config) $this->jsConfig($process);
+		$this->jsConfig($process);
 	}
 
 	/**
-	 * Set $config->js
+	 * Set config->js
 	 *
+	 * Sets the config->js->AdminCustomFiles
 	 */
 	private function jsConfig(Process $process) {
-		$user = $this->wire('user');
-		$config = $this->wire('config');
+		if (!$this->js_config || !$this->js_config_class) return false;
+		$base = $this->getBase();
+		$name = $this->js_config_class;
+		$classname = __NAMESPACE__ . '\\' . $name;
+		$path = in_array($name, self::configClasses)
+			? $base['modulePath']
+			: $base['path'];
 
-		$array = array(
-			'host' => $config->httpHost,
-			'process' => $process->className(),
-			'adminTheme' => $this->getThemeName(),
-			'user' => array(),
-			'roles' => array(),
-			'permissions' => array(),
-		);
+		require_once $path . $name . ".php";
 
-		foreach($user->template->fieldgroup as $field) {
-			$value = $user->get($field->name);
-			$array['user'][$field->name] = $field->type->___exportValue($user, $field, $value);
+		if (!class_exists($classname)) {
+			$this->error(sprintf('Class “%s” not found.', $name), true);
+			return false;
 		}
 
-		foreach ($user->roles as $role) {
-			$array['roles'][] = $role->name;
-			foreach ($role->permissions->each(['name', 'title']) as $arrayrray) {
-				$array['permissions'][$arrayrray['name']] = $arrayrray['title'];
-			}
-		}
-
-		if ($process instanceof ProcessPageEdit) {
-			$page = $process->getPage();
-			$array['template'] = $page->template->name;
-
-			$fields = array();
-			foreach ($page->template->fields as $field) $fields[$field->name] = $field->data;
-			$array['fields'] = $fields;
-
-			$array['page'] = array(
-				'id' => $page->id,
-				'name' => $page->name,
-				'path' => $page->path,
-				'parentID' => $page->parentID,
-				'numChildren' => $page->numChildren,
-				'created' => $page->created,
-				'modified' => $page->modified,
-				'createdUser' => $page->createdUser->name,
-				'modifiedUser' => $page->modifiedUser->name,
-			);
-		}
-
-		$config->js($this->className(), $array);
+		$jsConfig = new $classname($this);
+		$jsConfig->ready();
+		$jsConfig->setConfigJS();
 	}
-
 
 	/**
 	 * Get theme name
 	 *
 	 * @return string
-	 *
 	 */
-	private function getThemeName() {
+	public function getThemeName() {
 		return $this->wire('adminTheme')->className();
 	}
 
 	/**
 	 * Build String
 	 *
-	 * @param string $string Relative from AdminCustomFiles or from root
+	 * @param string $string Relative from AdminCustomFiles or from site root
 	 * @return mixed Associative array with URL and filetype or boolean false
-	 *
 	 */
 	public function fileInfo($string) {
+		/** @var Config */
 		$config = $this->wire('config');
-
 		$string = str_replace($config->paths->root, '/', $string);
 
 		// Relative
@@ -246,11 +235,12 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 * @return array
 	 */
 	private function getDependencies(Process $process) {
+		$files = $this->dependencies;
 		$array = array("scripts" => array(), "styles" => array());
-		if (!$this->dependencies) return $array;
-
-		$files = json_decode($this->dependencies, true);
-
+		if (!$files) return $array;
+		if (is_string($files)) {
+			$files = json_decode($files, true);
+		}
 		if (!is_array($files)) {
 			$this->error('Unable to get dependencies.', true);
 			return $array;
@@ -277,15 +267,13 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 * Build folder index
 	 *
 	 * @param Process $process
-	 *
 	 */
 	private function buildIndex(Process $process) {
 		$array = (array) $this->getDependencies($process);
-
-		$acf = $this->getBase()['relative'];
+		$base = $this->getBase();
 		$types = self::fileTypes;
-		$themeString = $acf . $this->getThemeName();
-		$processString = $acf . $process->className();
+		$themeString = $base['relative'] . $this->getThemeName();
+		$processString = $base['relative'] . $process->className();
 		$directory = new DirectoryIterator($this->base['path']);
 
 		foreach ($directory as $fileinfo) {
@@ -302,8 +290,6 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 
 			// When dependencies has same URL as this one
 			if (in_array($url, $array[$type])) continue;
-
-			// Add file
 			if ($loadTheme || $loadProcess) $array[$type][] = $url;
 		}
 
@@ -314,22 +300,69 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 * Get information about ACF folder
 	 *
 	 * @return array
-	 *
 	 */
 	private function getBase() {
 		if ($this->base) return $this->base;
-		$base = $this->wire('config')->paths->templates . $this->folder . '/';
+		/** @var Config */
+		$config = $this->wire('config');
+		$base = $config->paths->templates . $this->folder . '/';
 		$base = preg_replace('#/+#', '/', $base);
-		$relative = $this->wire('config')->urls->templates;
+		$relative = $config->urls->templates;
 
 		$this->base = array(
 			'exists' => is_dir($base),
 			'path' => $base,
 			'relative' => substr($base, strpos($base, $relative)),
 			'clean' => substr($base, strpos($base, $relative) + strlen($relative)),
+			'modulePath' => $config->paths->get($this->className()),
+			'moduleUrl' => $config->urls->get($this->className()),
 		);
 
 		return $this->base;
+	}
+
+	/**
+	 * Select
+	 *
+	 * @return Inputfield|null
+	 */
+	public function getAcfConfigInputfield() {
+		/** @var Modules */
+		$modules = $this->wire('modules');
+		/** @var DirectoryIterator */
+		$directory = new DirectoryIterator($this->base['path']);
+		/** @var array */
+		$configClasses = self::configClasses;
+
+		foreach ($directory as $fileinfo) {
+			if (strtolower($fileinfo->getExtension()) !== 'php') continue;
+			$path = $fileinfo->getPathname();
+			$name = $fileinfo->getBasename('.php');
+			include_once $path;
+			$classname = __NAMESPACE__ . '\\' . $name;
+			$configClasses[] = array(
+				"disabled" => !class_exists($classname),
+				"name" => $name,
+			);
+		}
+
+		$name = 'js_config_class';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldSelect');
+		$f->set('label', $this->_("Class used for building the config object."));
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$f->set('required', true);
+		$f->set('columnWidth', 50);
+		$f->showIf("js_config='1'");
+		$f->requiredIf("js_config='1'");
+		$f->addOption('', '');
+		foreach ($configClasses as $mixed) {
+			$label = is_array($mixed) ? $mixed['name'] : $mixed;
+			$disabled = is_array($mixed) ? $mixed['disabled'] : false;
+			$f->addOption($label, $label, array('disabled' => $disabled));
+		}
+		return $f;
 	}
 
 	/**
@@ -349,11 +382,24 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 
 	/**
 	 * Uninstall
-	 *
 	 */
 	public function ___uninstall() {
 		$base = $this->getBase();
 		if ($base['exists']) $this->message(sprintf($this->_("You may remove the folder %s manually."), $base['relative']));
+	}
+
+	/**
+	 * Upgrade module from one version to another
+	 *
+	 * @param int|string $fromVersion
+	 * @param int|string $toVersion
+	 */
+	public function ___upgrade($fromVersion, $toVersion) {
+		/** @var array */
+		$base = $this->getBase();
+		require $base['modulePath'] . "AdminCustomFilesUpgrade.php";
+		$upgrade = new AdminCustomFilesUpgrade($this);
+		$upgrade->execute();
 	}
 
 	/**
@@ -362,11 +408,32 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	 * Required for ConfigurableModule interface
 	 *
 	 * @param InputfieldWrapper $inputfields
-	 *
 	 */
 	public function getModuleConfigInputfields(InputfieldWrapper $inputfields) {
 		$modules = $this->wire('modules')->sort('name');
 		$base = $this->getBase();
+
+		$description =
+			$this->_("Drop JS or CSS files in the AdminCustomFiles directory starting with with a **process** name.") . "\n" .
+			$this->_("Then enable file injection by selecting the process under **Activate for process**.");
+
+		$name = 'folder';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldText');
+		$f->set('label', $this->_('AdminCustomFiles'));
+		$f->set('description', $description);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$f->set('required', true);
+
+		if ($base['exists']) {
+			$f->attr('value', $base['clean']);
+			$f->set('notes', sprintf($this->_('Folder exists: %s.'), $base['relative']));
+		} else {
+			$f->attr('value', $base['clean']);
+			$f->error($this->_("AdminCustomFiles folder does not exist, please create the folder inside your /site/templates/ folder."));
+		}
+		$inputfields->add($f);
 
 		$name = 'processes';
 		$value = $this->get($name);
@@ -388,46 +455,13 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$inputfields->add($f);
 
 		$description =
-			$this->_("Drop JS or CSS files in the AdminCustomFiles directory starting with with a **process** name.") . "\n" .
-			$this->_("Then enable file injection by selecting the process under **Activate for process**.");
-
-		$name = 'folder';
-		$f = $modules->get('InputfieldText');
-		$f->set('label', $this->_('AdminCustomFiles'));
-		$f->set('description', $description);
-		$f->attr('name', $name);
-		$f->attr('value', $this->get($name));
-		if ($base['exists']) {
-			$f->attr('value', $base['clean']);
-			$f->set('notes', sprintf($this->_('Folder exists: %s.'), $base['relative']));
-		} else {
-			$f->attr('value', $base['clean']);
-			$f->error($this->_("AdminCustomFiles folder does not exist, please create the folder inside your /site/templates/ folder."));
-		}
-		$inputfields->add($f);
-
-		$name = 'theme';
-		$value = $this->get($name);
-		$f = $modules->get('InputfieldCheckbox');
-		$f->set('skipLabel', Inputfield::skipLabelFor);
-		$f->set('label', $this->_('Theme based files'));
-		$f->set('description', $this->_('Adds files that start with the currently active AdminTheme name.'));
-		$f->set('label2', $this->_('Include theme based files.'));
-		$notes = $base['exists'] ? sprintf($this->_('Example: %sAdminThemeRenoYourSuffix.js'), $base['relative']) : '';
-		$f->set('notes', $notes);
-		$f->attr('checked', $value);
-		$f->attr('name', $name);
-		$f->attr('value', $value);
-		$inputfields->add($f);
-
-		$description =
 			$this->_("Dependencies will load before the other injected files.") . "\n" .
-			$this->_("Dependencies with a selected process will only run on that **Process** module."). "\n" .
-			$this->_("Dependencies without a selected process will load on all **Process** modules."). "\n" .
-			$this->_("Dependencies will load regardless of the selected value at **Activate for process**.");
+			$this->_("Dependencies with a selected process will only run on that **Process** module.") . "\n" .
+			$this->_("Dependencies without a selected process will load on all **Process** modules.");
 
 		$name = 'dependencies';
 		$value = $this->get($name);
+		$value = is_array($value) ? json_encode($value, true) : $value;
 		$f = $modules->get('InputfieldText');
 		$f->set('label', $this->_('Dependencies'));
 		$f->set('description', $description);
@@ -446,6 +480,47 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		)));
 		$inputfields->add($f);
 
+		$fs = $modules->get("InputfieldFieldset");
+		$fs->set('label', $this->_('Javascript Object'));
+		$fs->set('description', $this->_("You are able to build your own output for the JSON object, see example below."));
+		$fs->set('notes', $this->_("See: console.log(config.AdminCustomFiles)"));
+
+		$f = $modules->get('InputfieldMarkup');
+		$f->set('label', $this->_('Example'));
+		$f->set('value', "<pre><code class='description'>" . (file_get_contents($base['modulePath'] . "AcfConfigExample.txt")) . "</code></pre>");
+		$f->set('collapsed', Inputfield::collapsedYes);
+		$fs->add($f);
+
+		$name = 'js_config';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldCheckbox');
+		$f->set('skipLabel', Inputfield::skipLabelFor);
+		$f->set('label', $this->_('Config JS'));
+		$f->set('label2', $this->_('Additional JSON config data.'));
+		$f->set('columnWidth', 50);
+		$f->attr('checked', $value);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+
+		$fs->add($f);
+		$fs->add($this->getAcfConfigInputfield());
+		$inputfields->add($fs);
+
+		$name = 'theme';
+		$value = $this->get($name);
+		$f = $modules->get('InputfieldCheckbox');
+		$f->set('skipLabel', Inputfield::skipLabelFor);
+		$f->set('label', $this->_('Theme based files'));
+		$f->set('description', $this->_('Adds files that start with the currently active AdminTheme name.'));
+		$f->set('label2', $this->_('Include theme based files.'));
+		$notes = $base['exists'] ? sprintf($this->_('Example: %sAdminThemeRenoYourSuffix.js'), $base['relative']) : '';
+		$f->set('notes', $notes);
+		$f->attr('checked', $value);
+		$f->attr('name', $name);
+		$f->attr('value', $value);
+		$f->set('columnWidth', 50);
+		$inputfields->add($f);
+
 		$name = 'hash';
 		$value = $this->get($name);
 		$f = $modules->get('InputfieldCheckbox');
@@ -458,19 +533,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$f->attr('checked', $value);
 		$f->attr('name', $name);
 		$f->attr('value', $value);
-		$inputfields->add($f);
-
-		$name = 'js_config';
-		$value = $this->get($name);
-		$f = $modules->get('InputfieldCheckbox');
-		$f->set('skipLabel', Inputfield::skipLabelFor);
-		$f->set('label', $this->_('Config JS '));
-		$f->set('label2', $this->_('Additional JSON config data.'));
-		$f->set('notes', $this->_("See: console.log(config.AdminCustomFiles)"));
 		$f->set('columnWidth', 50);
-		$f->attr('checked', $value);
-		$f->attr('name', $name);
-		$f->attr('value', $value);
 		$inputfields->add($f);
 	}
 }

@@ -31,6 +31,7 @@
 	width: 45px;
 	text-align: center;
 	padding: 0 !important;
+	margin-right: 0 !important;;
 }
 
 .acfLsit .asmListItemLabel {
@@ -39,4 +40,19 @@
 
 .acfList .asmListItemHandle {
 	postion: absolute;
+}
+
+
+
+pre, code {
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    max-width: 100%;
+    overflow: auto;
+    display: block;
+	word-wrap: break-word;
+    page-break-inside: avoid;
+	tab-size: 4;
+	-moz-tab-size: 4;
 }

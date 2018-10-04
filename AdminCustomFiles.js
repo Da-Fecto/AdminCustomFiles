@@ -78,7 +78,12 @@ var AdminCustomFiles = (function () {
 	func.itemExists = function (url) {
 		var exists = false;
 		$.each(JSON.parse(el.input.value), function () {
-			if (this.file === url) {
+			if (this.file === url && el.select.value === this.process) {
+				exists = true;
+				return;
+			}
+
+			if (!this.process && this.file === url) {
 				exists = true;
 				return;
 			}
@@ -97,9 +102,10 @@ var AdminCustomFiles = (function () {
 		el.acfInput.value = "";
 		el.list.insertAdjacentHTML("beforeend", func.itemMarkup(process, file));
 		$(".acfDelete", el.list.lastChild).on("click", func.removeItem);
+		func.setData();
 	};
 
-	func.addItems = function (data) {
+	func.addItems = function () {
 		$(el.list).sortable({
 			revert: 50,
 			stop: func.setData,
@@ -178,7 +184,7 @@ var AdminCustomFiles = (function () {
 
 		$(el.button).css({
 			"height": $(el.acfInput).outerHeight() + "px",
-			"line-height": $(el.acfInput).outerHeight() + "px",
+			"line-height": $(el.acfInput).outerHeight() + "px"
 		});
 	};
 
@@ -189,5 +195,6 @@ var AdminCustomFiles = (function () {
 }());
 
 $(function () {
+	"use strict";
 	AdminCustomFiles.init();
 });

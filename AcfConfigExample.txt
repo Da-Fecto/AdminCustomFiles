@@ -1,0 +1,44 @@
+
+/**
+ * AcfConfigCustom
+ *
+ * Create a file in your AdminCustomFiles folder and start the filename with
+ * ‘AcfConfig’ then ‘a custom name’ and add ‘.php’.
+ *
+ * In this file create a class with the basename of the file without the
+ * extension. This class should extend AcfConfig and implements Module.
+ *
+ * Put in the
+ *
+ * Properties of the subclass
+ *
+ * @var AdminCustomFiles	$adminCustomFiles	Instance of AdminCustomFiles may you need it.
+ * @var Page|NullPage		$editPage			In processPageEdit it would be the page you are editting.
+ * @var Template			$editTemplate		Template from the page above.
+ */
+class AcfConfigCustom extends AcfConfig implements Module {
+
+	/**
+	 * Optional ready method
+	 *
+	 * - Use it or leave out.
+	 * - We call ready() before calling jsConfig().
+	 */
+	public function ready() {}
+
+	/**
+	 * Required jsConfig method
+	 *
+	 * Return a PHP array ready to be used for $config->js
+	 *
+	 * @return array
+	 */
+	public function jsConfig() {
+		$process = $this->wire('process');
+		return array(
+			"activeProcess" => $process->className(),
+			"editPage" => $this->editPage->id,
+			"editTemplate" => $this->editTemplate->name,
+		);
+	}
+}
