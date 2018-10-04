@@ -8,8 +8,6 @@
  * In this file create a class with the basename of the file without the
  * extension. This class should extend AcfConfig and implements Module.
  *
- * Put in the
- *
  * Properties of the subclass
  *
  * @var AdminCustomFiles	$adminCustomFiles	Instance of AdminCustomFiles may you need it.
