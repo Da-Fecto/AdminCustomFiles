@@ -23,7 +23,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Admin Custom Files',
-			'version' => '0.9.6',
+			'version' => '0.9.61',
 			'author' => 'Martijn Geerts',
 			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
 			'singular' => true,
@@ -352,10 +352,10 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$f->set('label', $this->_("Class used for building the config object."));
 		$f->attr('name', $name);
 		$f->attr('value', $value);
-		$f->set('required', true);
+		//$f->set('required', true);
 		$f->set('columnWidth', 50);
-		$f->showIf("js_config='1'");
-		$f->requiredIf("js_config='1'");
+		//$f->showIf("js_config='1'");
+		//$f->requiredIf("js_config='1'");
 		$f->addOption('', '');
 		foreach ($configClasses as $mixed) {
 			$label = is_array($mixed) ? $mixed['name'] : $mixed;
