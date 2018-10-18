@@ -23,7 +23,7 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Admin Custom Files',
-			'version' => '0.9.61',
+			'version' => '0.9.62',
 			'author' => 'Martijn Geerts',
 			'summary' => 'Add custom scripts & styles to the admin with optional dependencies',
 			'singular' => true,
@@ -88,12 +88,12 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		$base = $this->getBase();
 
 		if ($page->process === 'ProcessModule' && $input->get('name') === $className) {
-			require $base['modulePath'] . "acfConfig.php";
+			require $base['modulePath'] . "AcfConfig.php";
 			$config->scripts->add($base['moduleUrl'] . $className . '.js');
 			$config->styles->add($base['moduleUrl'] . $className . '.css');
 
 		} else if ($this->js_config) {
-			require $base['modulePath'] . "acfConfig.php";
+			require $base['modulePath'] . "AcfConfig.php";
 
 		}
 	}
@@ -215,7 +215,9 @@ class AdminCustomFiles extends WireData implements Module, ConfigurableModule {
 		}
 
 		if (!is_file($path)) return false;
-		$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+		$ext = ltrim(strrchr($path, "."), '.');
+		if (!$ext) return false;
 		if (!isset(self::fileTypes[$ext])) return false;
 
 		$hash = $this->hash ? '?hash=' . md5_file($path) : '';
